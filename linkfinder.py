@@ -4,14 +4,25 @@
 # By Gerben_Javado
 
 # Fix webbrowser bug for MacOS
+import xml.etree.ElementTree
+import base64
+import subprocess
+import webbrowser
+import jsbeautifier
+import requests
+import argparse
+import html
+import glob
+import sys
+import re
+from string import Template
+from gzip import GzipFile
 import os
+
 os.environ["BROWSER"] = "open"
 
 # Import libraries
-import re, sys, glob, html, argparse, jsbeautifier, webbrowser, subprocess, base64, ssl, xml.etree.ElementTree
 
-from gzip import GzipFile
-from string import Template
 
 try:
     from StringIO import StringIO
@@ -20,10 +31,6 @@ except ImportError:
     from io import BytesIO
     readBytesCustom = BytesIO
 
-try:
-    from urllib.request import Request, urlopen
-except ImportError:
-    from urllib2 import Request, urlopen
 
 # Regex used
 regex_str = r"""
@@ -69,6 +76,7 @@ regex_str = r"""
 
 context_delimiter_str = "\n"
 
+
 def parser_error(errmsg):
     '''
     Error Messages
@@ -98,7 +106,8 @@ def parser_input(input):
         items = xml.etree.ElementTree.fromstring(open(args.input, "r").read())
 
         for item in items:
-            jsfiles.append({"js":base64.b64decode(item.find('response').text).decode('utf-8',"replace"), "url":item.find('url').text})
+            jsfiles.append({"js": base64.b64decode(item.find('response').text).decode(
+                'utf-8', "replace"), "url": item.find('url').text})
         return jsfiles
 
     # Method 4 - Folder with a wildcard
@@ -119,31 +128,21 @@ def send_request(url):
     '''
     Send requests with Requests
     '''
-    q = Request(url)
-
-    q.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
-        AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36')
-    q.add_header('Accept', 'text/html,\
-        application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8')
-    q.add_header('Accept-Language', 'en-US,en;q=0.8')
-    q.add_header('Accept-Encoding', 'gzip')
-    q.add_header('Cookie', args.cookies)
-
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.8',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Cookie': args.cookies
+    }
+    
     try:
-        sslcontext = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-        response = urlopen(q, timeout=args.timeout, context=sslcontext)
-    except:
-        sslcontext = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
-        response = urlopen(q, timeout=args.timeout, context=sslcontext)
+        content = requests.get(url, headers=headers, verify=False, timeout=args.timeout)
+    except requests.exceptions.RequestException as e:
+        print(e)
+        sys.exit()
+    return str(content.content)
+    
 
-    if response.info().get('Content-Encoding') == 'gzip':
-        data = GzipFile(fileobj=readBytesCustom(response.read())).read()
-    elif response.info().get('Content-Encoding') == 'deflate':
-        data = response.read().read()
-    else:
-        data = response.read()
-
-    return data.decode('utf-8', 'replace')
 
 def getContext(list_matches, content, include_delimiter=0, context_delimiter_str="\n"):
     '''
@@ -171,7 +170,8 @@ def getContext(list_matches, content, include_delimiter=0, context_delimiter_str
         if include_delimiter:
             context = content[context_start_index: context_end_index]
         else:
-            context = content[context_start_index + delimiter_len: context_end_index]
+            context = content[context_start_index +
+                              delimiter_len: context_end_index]
 
         item = {
             "link": match_str,
@@ -180,6 +180,7 @@ def getContext(list_matches, content, include_delimiter=0, context_delimiter_str
         items.append(item)
 
     return items
+
 
 def parser_file(content, regex_str, mode=1, more_regex=None, no_dup=1):
     '''
@@ -198,15 +199,17 @@ def parser_file(content, regex_str, mode=1, more_regex=None, no_dup=1):
     if mode == 1:
         # Beautify
         if len(content) > 1000000:
-            content = content.replace(";",";\r\n").replace(",",",\r\n")
+            content = content.replace(";", ";\r\n").replace(",", ",\r\n")
         else:
             content = jsbeautifier.beautify(content)
 
     regex = re.compile(regex_str, re.VERBOSE)
 
     if mode == 1:
-        all_matches = [(m.group(1), m.start(0), m.end(0)) for m in re.finditer(regex, content)]
-        items = getContext(all_matches, content, context_delimiter_str=context_delimiter_str)
+        all_matches = [(m.group(1), m.start(0), m.end(0))
+                       for m in re.finditer(regex, content)]
+        items = getContext(all_matches, content,
+                           context_delimiter_str=context_delimiter_str)
     else:
         items = [{"link": m.group(1)} for m in re.finditer(regex, content)]
 
@@ -232,6 +235,7 @@ def parser_file(content, regex_str, mode=1, more_regex=None, no_dup=1):
 
     return filtered_items
 
+
 def cli_output(endpoints):
     '''
     Output to CLI
@@ -239,6 +243,7 @@ def cli_output(endpoints):
     for endpoint in endpoints:
         print(html.escape(endpoint["link"]).encode(
             'ascii', 'ignore').decode('utf8'))
+
 
 def html_save(html):
     '''
@@ -266,6 +271,7 @@ def html_save(html):
     finally:
         os.dup2(hide, 1)
 
+
 def check_url(url):
     nopelist = ["node_modules", "jquery.js"]
     if url[-3:] == ".js":
@@ -283,6 +289,7 @@ def check_url(url):
         return url
     else:
         return False
+
 
 if __name__ == "__main__":
     # Parse command line
@@ -310,7 +317,8 @@ if __name__ == "__main__":
                         action="store", default="")
     default_timeout = 10
     parser.add_argument("-t", "--timeout",
-                        help="How many seconds to wait for the server to send data before giving up (default: " + str(default_timeout) + " seconds)",
+                        help="How many seconds to wait for the server to send data before giving up (default: " + str(
+                            default_timeout) + " seconds)",
                         default=default_timeout, type=int, metavar="<seconds>")
     args = parser.parse_args()
 
@@ -339,7 +347,8 @@ if __name__ == "__main__":
         endpoints = parser_file(file, regex_str, mode, args.regex)
         if args.domain:
             for endpoint in endpoints:
-                endpoint = html.escape(endpoint["link"]).encode('ascii', 'ignore').decode('utf8')
+                endpoint = html.escape(endpoint["link"]).encode(
+                    'ascii', 'ignore').decode('utf8')
                 endpoint = check_url(endpoint)
                 if endpoint is False:
                     continue
@@ -347,7 +356,8 @@ if __name__ == "__main__":
                 print("")
                 try:
                     file = send_request(endpoint)
-                    new_endpoints = parser_file(file, regex_str, mode, args.regex)
+                    new_endpoints = parser_file(
+                        file, regex_str, mode, args.regex)
                     if args.output == 'cli':
                         cli_output(new_endpoints)
                     else:
